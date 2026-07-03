@@ -2064,6 +2064,10 @@ public final class SystemServiceRegistry {
         if (sEnableServiceNotFoundWtf && ret == null) {
             // Some services do return null in certain situations, so don't do WTF for them.
             switch (name) {
+                // Queried before they're published early in boot; the WTF recurses via
+                // addErrorToDropBox -> getSystemService(dropbox) and stalls startOtherServices.
+                case Context.DROPBOX_SERVICE:
+                case Context.SUPERVISION_SERVICE:
                 case Context.CONTENT_CAPTURE_MANAGER_SERVICE:
                 case Context.APP_PREDICTION_SERVICE:
                 case Context.INCREMENTAL_SERVICE:
@@ -2108,7 +2112,13 @@ public final class SystemServiceRegistry {
                     return null;
                 }
             }
-            Slog.wtf(TAG, "Manager wrapper not available: " + name);
+            // Suppress WTF for any service-not-found before sys.boot_completed=1.
+            // See onServiceNotFound() for full rationale.
+            if ("1".equals(android.os.SystemProperties.get("sys.boot_completed"))) {
+                Slog.wtf(TAG, "Manager wrapper not available: " + name);
+            } else {
+                Slog.w(TAG, "Manager wrapper not available: " + name + " (suppressed during early boot)");
+            }
             return null;
         }
         return ret;
@@ -2639,13 +2649,17 @@ public final class SystemServiceRegistry {
     /** @hide */
     @RavenwoodKeepWholeClass
     public static void onServiceNotFound(ServiceNotFoundException e) {
-        // We're mostly interested in tracking down long-lived core system
-        // components that might stumble if they obtain bad references; just
-        // emit a tidy log message for normal apps
-        if (android.os.Process.myUid() < android.os.Process.FIRST_APPLICATION_UID) {
-            Log.wtf(TAG, e.getMessage(), e);
+        // Service-not-found WTF here recurses via addErrorToDropBox -> getSystemService("dropbox")
+        // -> back here, stalling boot; demote to warning until sys.boot_completed=1.
+        if ("1".equals(android.os.SystemProperties.get("sys.boot_completed"))) {
+            // Boot complete: original behavior (WTF on system processes).
+            if (android.os.Process.myUid() < android.os.Process.FIRST_APPLICATION_UID) {
+                Log.wtf(TAG, e.getMessage(), e);
+            } else {
+                Log.w(TAG, e.getMessage());
+            }
         } else {
-            Log.w(TAG, e.getMessage());
+            Log.w(TAG, e.getMessage() + " (suppressed during early boot)");
         }
     }
 }

@@ -383,9 +383,12 @@ public class ImsCallSessionImplBase implements AutoCloseable {
         // Call the methods with a clean calling identity on the executor and wait indefinitely for
         // the future to return.
         private void executeMethodAsync(Runnable r, String errorLogName) {
+            // Legacy IMS impls never call setDefaultExecutor, leaving mExecutor null;
+            // runAsync(r, null) would NPE com.android.phone. Run synchronously when null.
+            Executor exec = (mExecutor != null) ? mExecutor : Runnable::run;
             try {
                 CompletableFuture.runAsync(
-                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), mExecutor).join();
+                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), exec).join();
             } catch (CancellationException | CompletionException e) {
                 Log.w(LOG_TAG, "ImsCallSessionImplBase Binder - " + errorLogName + " exception: "
                         + e.getMessage());
@@ -394,8 +397,9 @@ public class ImsCallSessionImplBase implements AutoCloseable {
 
         private <T> T executeMethodAsyncForResult(Supplier<T> r,
                 String errorLogName) {
+            Executor exec = (mExecutor != null) ? mExecutor : Runnable::run;
             CompletableFuture<T> future = CompletableFuture.supplyAsync(
-                    () -> TelephonyUtils.runWithCleanCallingIdentity(r), mExecutor);
+                    () -> TelephonyUtils.runWithCleanCallingIdentity(r), exec);
             try {
                 return future.get();
             } catch (ExecutionException | InterruptedException e) {

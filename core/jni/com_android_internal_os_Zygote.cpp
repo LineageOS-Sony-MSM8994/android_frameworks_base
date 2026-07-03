@@ -1969,10 +1969,11 @@ static void SpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray gids, 
     if (getuid() == 0) {
         const int rc = createProcessGroup(uid, getpid());
         if (rc != 0) {
-            fail_fn(rc == -EROFS ? CREATE_ERROR("createProcessGroup failed, kernel missing "
-                                                "CONFIG_CGROUP_CPUACCT?")
-                                 : CREATE_ERROR("createProcessGroup(%d, %d) failed: %s", uid,
-                                                /* pid= */ 0, strerror(-rc)));
+            // Legacy kernel has no cgroup v2 mounted, so createProcessGroup fails
+            // with -ENOENT; upstream's fail_fn would kill zygote, so continue booting.
+            ALOGW("createProcessGroup(%d, %d) failed: %s — continuing without "
+                  "cgroup (legacy kernel without cgroup v2)",
+                  uid, /* pid= */ 0, strerror(-rc));
         }
 
         if (is_system_server && UsePerAppMemcg()) {

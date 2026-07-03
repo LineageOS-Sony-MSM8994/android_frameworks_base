@@ -1224,16 +1224,45 @@ class StorageManagerService extends IStorageManager.Stub
         // We purposefully block here to make sure that user-specific
         // staging area is ready so it's ready for zygote-forked apps to
         // bind mount against.
+        //
+        // Split the try/catch so a transient failure in one notification (e.g.
+        // onUnlockUser) doesn't cascade and skip the independent vold/storaged calls.
         try {
             mStorageSessionController.onUnlockUser(userId);
+        } catch (Exception e) {
+            Slog.w(TAG, "onUnlockUser failed for user " + userId
+                    + " (will retry on demand): " + e);
+        }
+        try {
             mVold.onUserStarted(userId);
+        } catch (Exception e) {
+            Slog.wtf(TAG, "vold.onUserStarted failed for user " + userId, e);
+        }
+        try {
             mStoraged.onUserStarted(userId);
         } catch (Exception e) {
-            Slog.wtf(TAG, e);
+            Slog.w(TAG, "storaged.onUserStarted failed for user " + userId
+                    + ": " + e);
         }
 
         mHandler.obtainMessage(H_COMPLETE_UNLOCK_USER, userId, /* arg2 (unusued) */ 0)
                 .sendToTarget();
+        /*
+         * Stalled HandlerThread can drop H_COMPLETE_UNLOCK_USER, leaving storage
+         * reported as locked; replay on BackgroundThread (idempotent).
+         */
+        final int unlockUserId = userId;
+        BackgroundThread.getHandler().postDelayed(() -> {
+            Slog.w(TAG, "forcing completeUnlockUser("
+                    + unlockUserId + ") via BackgroundThread");
+            try {
+                completeUnlockUser(unlockUserId);
+            } catch (Throwable t) {
+                Slog.w(TAG, "completeUnlockUser replay "
+                        + "threw: " + t);
+            }
+        }, 500);
+
         if (mRemountCurrentUserVolumesOnUnlock && userId == mCurrentUserId) {
             maybeRemountVolumes(userId);
             mRemountCurrentUserVolumesOnUnlock = false;
@@ -1421,6 +1450,21 @@ class StorageManagerService extends IStorageManager.Stub
             mSecureKeyguardShowing = isSecureKeyguardShowing;
             mHandler.obtainMessage(H_SECURE_KEYGUARD_STATE_CHANGED, mSecureKeyguardShowing)
                     .sendToTarget();
+            /*
+             * Stalled HandlerThread can drop H_SECURE_KEYGUARD_STATE_CHANGED,
+             * leaving disks unscanned in mPendingDisks; push to vold via BackgroundThread.
+             */
+            final boolean kgShowing = mSecureKeyguardShowing;
+            BackgroundThread.getHandler().postDelayed(() -> {
+                Slog.w(TAG, "forcing "
+                        + "mVold.onSecureKeyguardStateChanged(" + kgShowing
+                        + ") via BackgroundThread");
+                try {
+                    mVold.onSecureKeyguardStateChanged(kgShowing);
+                } catch (Throwable t) {
+                    Slog.w(TAG, "vold call threw: " + t);
+                }
+            }, 500);
         }
     }
 
@@ -1531,6 +1575,28 @@ class StorageManagerService extends IStorageManager.Stub
                     args.argi2 = newState;
                     mHandler.obtainMessage(H_VOLUME_STATE_CHANGED, args).sendToTarget();
                     onVolumeStateChangedLocked(vInfo, newState);
+
+                    /*
+                     * Stalled HandlerThread can drop H_VOLUME_STATE_CHANGED, skipping
+                     * onVolumeStateChangedAsync() (MediaProvider attach + broadcasts); replay on BackgroundThread.
+                     */
+                    final WatchedVolumeInfo asyncVol = vInfo;
+                    final int asyncOldState = oldState;
+                    final int asyncNewState = newState;
+                    BackgroundThread.getHandler().postDelayed(() -> {
+                        Slog.w(TAG, "forcing "
+                                + "onVolumeStateChangedAsync via "
+                                + "BackgroundThread for " + asyncVol.getId()
+                                + " (" + asyncOldState + " → "
+                                + asyncNewState + ")");
+                        try {
+                            onVolumeStateChangedAsync(asyncVol,
+                                    asyncOldState, asyncNewState);
+                        } catch (Throwable t) {
+                            Slog.w(TAG, "async replay threw: "
+                                    + t);
+                        }
+                    }, 500);
                 }
             }
         }
@@ -1654,6 +1720,12 @@ class StorageManagerService extends IStorageManager.Stub
                 vol.setMountFlags(vol.getMountFlags() | VolumeInfo.MOUNT_FLAG_PRIMARY);
                 vol.setMountFlags(vol.getMountFlags() | VolumeInfo.MOUNT_FLAG_VISIBLE_FOR_WRITE);
                 mHandler.obtainMessage(H_VOLUME_MOUNT, vol).sendToTarget();
+                /*
+                 * Stalled HandlerThread can drop H_VOLUME_MOUNT for the emulated
+                 * volume; drive the mount via BackgroundThread with backoff (MediaProvider loads lazily).
+                 */
+                final WatchedVolumeInfo fallbackVol = vol;
+                tryDirectMountWithRetries(fallbackVol, /*attempt=*/ 0);
             }
 
         } else if (vol.getType() == VolumeInfo.TYPE_PUBLIC) {
@@ -1675,9 +1747,15 @@ class StorageManagerService extends IStorageManager.Stub
 
             vol.setMountUserId(mCurrentUserId);
             mHandler.obtainMessage(H_VOLUME_MOUNT, vol).sendToTarget();
+            // Extend the BackgroundThread mount fallback to TYPE_PUBLIC
+            // (SD card / USB-OTG); the stalled handler would otherwise leave
+            // the public volume in STATE_UNMOUNTED.
+            tryDirectMountWithRetries(vol, /*attempt=*/ 0);
 
         } else if (vol.getType() == VolumeInfo.TYPE_PRIVATE) {
             mHandler.obtainMessage(H_VOLUME_MOUNT, vol).sendToTarget();
+            // Extend the BackgroundThread mount fallback to TYPE_PRIVATE as well.
+            tryDirectMountWithRetries(vol, /*attempt=*/ 0);
 
         } else if (vol.getType() == VolumeInfo.TYPE_STUB) {
             if (vol.getDisk().isStubVisible()) {
@@ -2381,6 +2459,47 @@ class StorageManagerService extends IStorageManager.Stub
             throw new SecurityException("Mounting " + volId + " restricted by policy");
         }
         mount(vol);
+    }
+
+    /**
+     * Drives the direct-mount fallback with retries (backoff up to 30s) because
+     * MediaProvider's ContentProvider is lazy-loaded and mount() can NPE before it is alive.
+     */
+    private static final long[] DIRECT_MOUNT_BACKOFF_MS =
+            { 1_000L, 3_000L, 6_000L, 10_000L, 15_000L, 20_000L, 30_000L };
+
+    private void tryDirectMountWithRetries(final WatchedVolumeInfo vol,
+            final int attempt) {
+        if (attempt >= DIRECT_MOUNT_BACKOFF_MS.length) {
+            Slog.e(TAG, "gave up trying to mount "
+                    + vol.getId() + " after " + attempt + " attempts");
+            return;
+        }
+        final long delayMs = DIRECT_MOUNT_BACKOFF_MS[attempt];
+        BackgroundThread.getHandler().postDelayed(() -> {
+            if (vol.getState() != VolumeInfo.STATE_UNMOUNTED) {
+                // Already mounted (or in another state) — done.
+                return;
+            }
+            Slog.w(TAG, "attempt " + (attempt + 1)
+                    + " forcing direct mount() of " + vol.getId()
+                    + " (state=" + vol.getState() + ")");
+            try {
+                mount(vol);
+            } catch (Throwable t) {
+                Slog.w(TAG, "mount attempt "
+                        + (attempt + 1) + " threw: " + t);
+            }
+            // If still UNMOUNTED after the call (which can happen because
+            // mount() catches its own ExternalStorageServiceException and
+            // returns without throwing), schedule the next attempt.
+            if (vol.getState() == VolumeInfo.STATE_UNMOUNTED) {
+                tryDirectMountWithRetries(vol, attempt + 1);
+            } else {
+                Slog.i(TAG, vol.getId()
+                        + " mounted on attempt " + (attempt + 1));
+            }
+        }, delayMs);
     }
 
     private void remountAppStorageDirs(Map<Integer, String> pidPkgMap, int userId) {

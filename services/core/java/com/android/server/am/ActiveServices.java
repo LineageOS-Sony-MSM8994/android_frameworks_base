@@ -5048,7 +5048,13 @@ public final class ActiveServices {
         if (r == null) {
             try {
                 long flags = ActivityManagerService.STOCK_PM_FLAGS
-                        | PackageManager.MATCH_DEBUG_TRIAGED_MISSING;
+                        | PackageManager.MATCH_DEBUG_TRIAGED_MISSING
+                        /*
+                         * Include MATCH_DIRECT_BOOT_* so directBootAware services
+                         * resolve during the STATE_RUNNING_UNLOCKING window.
+                         */
+                        | PackageManager.MATCH_DIRECT_BOOT_AWARE
+                        | PackageManager.MATCH_DIRECT_BOOT_UNAWARE;
                 if (allowInstant) {
                     flags |= PackageManager.MATCH_INSTANT;
                 }
