@@ -280,9 +280,12 @@ public class ImsUtImplBase {
         // Call the methods with a clean calling identity on the executor and wait indefinitely for
         // the future to return.
         private void executeMethodAsync(Runnable r, String errorLogName) throws RemoteException {
+            // Legacy IMS impls never call setDefaultExecutor, leaving mExecutor null;
+            // runAsync(r, null) would NPE com.android.phone. Run synchronously when null.
+            Executor exec = (mExecutor != null) ? mExecutor : Runnable::run;
             try {
                 CompletableFuture.runAsync(
-                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), mExecutor).join();
+                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), exec).join();
             } catch (CancellationException | CompletionException e) {
                 Log.w(TAG, "ImsUtImplBase Binder - " + errorLogName + " exception: "
                         + e.getMessage());
@@ -292,8 +295,9 @@ public class ImsUtImplBase {
 
         private <T> T executeMethodAsyncForResult(Supplier<T> r,
                 String errorLogName) throws RemoteException {
+            Executor exec = (mExecutor != null) ? mExecutor : Runnable::run;
             CompletableFuture<T> future = CompletableFuture.supplyAsync(
-                    () -> TelephonyUtils.runWithCleanCallingIdentity(r), mExecutor);
+                    () -> TelephonyUtils.runWithCleanCallingIdentity(r), exec);
             try {
                 return future.get();
             } catch (ExecutionException | InterruptedException e) {
