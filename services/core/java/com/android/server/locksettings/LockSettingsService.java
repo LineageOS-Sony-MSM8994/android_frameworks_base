@@ -1127,6 +1127,25 @@ public class LockSettingsService extends ILockSettings.Stub {
     // This is called when Weaver is guaranteed to be available (if the device supports Weaver).
     // It does any synthetic password related work that was delayed from earlier in the boot.
     private void onThirdPartyAppsStarted() {
+        // Skip SP migration when gatekeeperd is unavailable: its downstream Keystore
+        // key bindings can't be created. Boots unsecured; setLockCredential fails closed.
+        if (ServiceManager.getService(Context.GATEKEEPER_SERVICE) == null) {
+            Slog.w(TAG, "GateKeeper service unavailable — skipping synthetic password "
+                    + "migration on this boot; users will be unsecured.");
+            return;
+        }
+        // Even with GateKeeper, migration calls Keystore via SyntheticPasswordCrypto and
+        // can fail if keystore2's binder isn't registered; wrap so it doesn't kill system_server.
+        try {
+            doOnThirdPartyAppsStartedLocked();
+        } catch (RuntimeException e) {
+            Slog.w(TAG, "Synthetic password migration failed (likely Keystore "
+                    + "unavailable on legacy kernel) — continuing without SP "
+                    + "migration; users will be unsecured: " + e);
+        }
+    }
+
+    private void doOnThirdPartyAppsStartedLocked() {
         synchronized (mUserCreationAndRemovalLock) {
             // Handle delayed calls to LSS.removeUser() and LSS.createNewUser().
             for (int i = 0; i < mEarlyRemovedUsers.size(); i++) {
@@ -2924,7 +2943,9 @@ public class LockSettingsService extends ILockSettings.Stub {
             return mGateKeeperService;
         }
 
-        final IBinder service = ServiceManager.waitForService(Context.GATEKEEPER_SERVICE);
+        // Non-blocking lookup: waitForService() blocks system_server forever if no AIDL
+        // GateKeeper binder is ever published (SystemUI ANRs, boot loop); getService() copes via null.
+        final IBinder service = ServiceManager.getService(Context.GATEKEEPER_SERVICE);
         if (service != null) {
             try {
                 service.linkToDeath(new GateKeeperDiedRecipient(), 0);
@@ -3815,8 +3836,15 @@ public class LockSettingsService extends ILockSettings.Stub {
         }
 
         private void reportDeviceSetupComplete() {
+            // getGateKeeperService() may return null when GateKeeper is unavailable; without
+            // this null-check the NPE would kill system_server and trigger a reboot loop.
+            IGateKeeperService gk = getGateKeeperService();
+            if (gk == null) {
+                Slog.w(TAG, "GateKeeper unavailable — skipping reportDeviceSetupComplete");
+                return;
+            }
             try {
-                getGateKeeperService().reportDeviceSetupComplete();
+                gk.reportDeviceSetupComplete();
             } catch (RemoteException e) {
                 Slog.e(TAG, "Failure reporting to IGateKeeperService", e);
             }

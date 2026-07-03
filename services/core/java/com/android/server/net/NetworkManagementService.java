@@ -408,6 +408,13 @@ public class NetworkManagementService extends INetworkManagementService.Stub {
 
     private void connectNativeNetdService() {
         mNetdService = mDeps.getNetd();
+        if (mNetdService == null) {
+            // On some legacy kernels netd never fully comes up; NetdService.get()
+            // times out rather than blocking forever. Bail out instead of NPEing
+            // on the next call, which would trip Watchdog and kill system_server.
+            Slog.w(TAG, "Netd not available (legacy kernel) — continuing without network management");
+            return;
+        }
         try {
             mNetdService.registerUnsolicitedEventListener(mNetdUnsolicitedEventListener);
             if (DBG) Slog.d(TAG, "Register unsolicited event listener");

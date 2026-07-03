@@ -1038,6 +1038,11 @@ public class BiometricService extends SystemService {
                     userId, authenticators);
 
             final long secureUserId;
+            if (mGateKeeper == null) {
+                // No gatekeeper service, so no secure user id is available;
+                // treat as if no biometric auth has occurred.
+                return BIOMETRIC_NO_AUTHENTICATION;
+            }
             try {
                 secureUserId = mGateKeeper.getSecureUserId(userId);
             } catch (RemoteException e) {
@@ -1421,7 +1426,15 @@ public class BiometricService extends SystemService {
         }
 
         public IGateKeeperService getGateKeeperService() {
-            return GateKeeper.getService();
+            try {
+                return GateKeeper.getService();
+            } catch (IllegalStateException e) {
+                // The AIDL IGateKeeperService binder isn't published on devices
+                // that only ship a HIDL gatekeeper HAL. Return null so the
+                // service can still construct; biometric auth is unavailable.
+                Slog.w(TAG, "GateKeeper service not available — biometric auth disabled: " + e);
+                return null;
+            }
         }
 
         public ITrustManager getTrustManager() {

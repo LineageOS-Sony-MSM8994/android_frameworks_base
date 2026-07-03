@@ -477,9 +477,30 @@ public final class FileUtils {
                         throw e;
                     }
                 } else if (S_ISFIFO(st_in.st_mode) || S_ISFIFO(st_out.st_mode)) {
-                    return copyInternalSplice(in, out, count, signal, executor, listener);
+                    try {
+                        return copyInternalSplice(in, out, count, signal, executor, listener);
+                    } catch (ErrnoException e) {
+                        if (e.errno == EINVAL || e.errno == ENOSYS) {
+                            // This kernel lacks .splice_read on some fd types
+                            // (returns EINVAL/ENOSYS); fall back to a userspace
+                            // copy, same as the sendfile path does.
+                            return copyInternalUserspace(in, out, count, signal, executor,
+                                    listener);
+                        }
+                        throw e;
+                    }
                 } else if (S_ISSOCK(st_in.st_mode) || S_ISSOCK(st_out.st_mode)) {
-                    return copyInternalSpliceSocket(in, out, count, signal, executor, listener);
+                    try {
+                        return copyInternalSpliceSocket(in, out, count, signal, executor, listener);
+                    } catch (ErrnoException e) {
+                        if (e.errno == EINVAL || e.errno == ENOSYS) {
+                            // AF_UNIX sockets lack .splice_read on this kernel
+                            // (EINVAL); fall back to userspace so adb streamed install works.
+                            return copyInternalUserspace(in, out, count, signal, executor,
+                                    listener);
+                        }
+                        throw e;
+                    }
                 }
             } catch (ErrnoException e) {
                 throw e.rethrowAsIOException();

@@ -2617,14 +2617,12 @@ public final class ProcessList implements ProcessStateController.ProcessLruUpdat
                         // If we're not told to skip the process group creation, go create it.
                         final int res = Process.createProcessGroup(uid, startResult.pid);
                         if (res < 0) {
-                            if (res == -OsConstants.ESRCH) {
-                                Slog.e(ActivityManagerService.TAG,
-                                        "Unable to create process group for "
-                                        + app.processName + " (" + startResult.pid + ")");
-                            } else {
-                                throw new AssertionError("Unable to create process group for "
-                                    + app.processName + " (" + startResult.pid + ")");
-                            }
+                            // No cgroup v2 apps hierarchy here: createProcessGroup can return
+                            // -ENOENT (not just -ESRCH); upstream AssertionError would kill system_server.
+                            Slog.e(ActivityManagerService.TAG,
+                                    "Unable to create process group for "
+                                    + app.processName + " (" + startResult.pid + ") res=" + res
+                                    + " (tolerated on legacy kernel)");
                         } else {
                             app.mProcessGroupCreated = true;
                         }
