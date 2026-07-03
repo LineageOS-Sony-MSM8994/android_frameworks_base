@@ -797,27 +797,65 @@ static binder_status_t writeBlob(AParcel* parcel, uint64_t bitmapId, const SkBit
                                             bitmap.width(), bitmap.height(), size);
         base::unique_fd fd;
 
+        /*
+         * This kernel may lack memfd_create (ENOSYS); fall back to ashmem so
+         * bitmap parceling (MediaSession album art) still works.
+         */
+        bool used_memfd = false;
         fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
-        if (fd.get() < 0) {
-            return STATUS_NO_MEMORY;
+        if (fd.get() >= 0) {
+            used_memfd = true;
         }
+        // else: legacy kernel without memfd_create (added in 3.17) -> ashmem path
 
-        ssize_t written = write(fd.get(), data, size);
-        if (written != size) {
-            return STATUS_NO_MEMORY;
-        }
+        if (used_memfd) {
+            ssize_t written = write(fd.get(), data, size);
+            if (written != size) {
+                ALOGE("memfd write failed: %zd/%zu errno=%d (%m)", written, size, errno);
+                return STATUS_NO_MEMORY;
+            }
 
-        if (fcntl(fd, F_ADD_SEALS,
-                    // Disallow growing / shrinking.
-                    F_SEAL_GROW | F_SEAL_SHRINK
-                    // If immutable, disallow writing.
-                    // Use F_SEAL_FUTURE_WRITE instead of F_SEAL_WRITE to work around a bug in
-                    // pre-6.7 kernels.
-                    // There are no writable mappings made prior to this, so both seals are
-                    // functionally equivalent.
-                    // See: b/409846908#comment39
-                    | (immutable ? F_SEAL_FUTURE_WRITE : 0))) {
-            return STATUS_UNKNOWN_ERROR;
+            int seals = F_SEAL_GROW | F_SEAL_SHRINK
+                        | (immutable ? F_SEAL_FUTURE_WRITE : 0);
+            if (fcntl(fd, F_ADD_SEALS, seals) != 0) {
+                /*
+                 * This kernel lacks F_SEAL_FUTURE_WRITE (EINVAL); retry with
+                 * F_SEAL_WRITE, else continue unsealed (no writable mappings remain).
+                 */
+                if (errno == EINVAL && immutable) {
+                    int legacy_seals = F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_WRITE;
+                    if (fcntl(fd, F_ADD_SEALS, legacy_seals) != 0) {
+                        ALOGW("memfd sealing unsupported (errno=%d), "
+                              "continuing without seals", errno);
+                        // continue without sealing
+                    }
+                } else {
+                    ALOGE("memfd F_ADD_SEALS unexpected failure errno=%d", errno);
+                    return STATUS_UNKNOWN_ERROR;
+                }
+            }
+
+        } else {
+            fd.reset(ashmem_create_region(ashmemId.c_str(), size));
+            if (fd.get() < 0) {
+                ALOGE("ashmem_create_region failed: errno=%d (%m) size=%zu", errno, size);
+                return STATUS_NO_MEMORY;
+            }
+
+            {
+                void* dest = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd.get(), 0);
+                if (dest == MAP_FAILED) {
+                    ALOGE("mmap MAP_FAILED errno=%d (%m) size=%zu", errno, size);
+                    return STATUS_NO_MEMORY;
+                }
+                memcpy(dest, data, size);
+                munmap(dest, size);
+            }
+
+            if (immutable && ashmem_set_prot_region(fd.get(), PROT_READ) < 0) {
+                ALOGE("ashmem_set_prot_region failed errno=%d (%m)", errno);
+                return STATUS_UNKNOWN_ERROR;
+            }
         }
 
         // Workaround b/149851140 in AParcel_writeParcelFileDescriptor

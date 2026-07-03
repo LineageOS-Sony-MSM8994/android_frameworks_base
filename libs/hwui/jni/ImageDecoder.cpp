@@ -31,6 +31,14 @@
 #include <SkSize.h>
 #include <SkStream.h>
 #include <SkString.h>
+// Skia codec decoder factories (registered explicitly below).
+#include <SkBmpDecoder.h>
+#include <SkGifDecoder.h>
+#include <SkIcoDecoder.h>
+#include <SkJpegDecoder.h>
+#include <SkPngDecoder.h>
+#include <SkWbmpDecoder.h>
+#include <SkWebpDecoder.h>
 #include <androidfw/Asset.h>
 #include <fcntl.h>
 #include <gui/TraceUtils.h>
@@ -605,6 +613,18 @@ static const JNINativeMethod gImageDecoderMethods[] = {
 };
 
 int register_android_graphics_ImageDecoder(JNIEnv* env) {
+    /*
+     * This Skia build defines no SK_CODEC_DECODES_* macros, so decodes return
+     * kUnimplemented; register formats here (AVIF omitted: crabby-avif link risk).
+     */
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+    SkCodecs::Register(SkWebpDecoder::Decoder());
+    SkCodecs::Register(SkGifDecoder::Decoder());
+    SkCodecs::Register(SkIcoDecoder::Decoder());
+    SkCodecs::Register(SkBmpDecoder::Decoder());
+    SkCodecs::Register(SkWbmpDecoder::Decoder());
+
     gImageDecoder_class = MakeGlobalRefOrDie(env, FindClassOrDie(env, "android/graphics/ImageDecoder"));
     gImageDecoder_constructorMethodID = GetMethodIDOrDie(env, gImageDecoder_class, "<init>", "(JIIZZ)V");
     gImageDecoder_postProcessMethodID = GetMethodIDOrDie(env, gImageDecoder_class, "postProcessAndRelease", "(Landroid/graphics/Canvas;)I");

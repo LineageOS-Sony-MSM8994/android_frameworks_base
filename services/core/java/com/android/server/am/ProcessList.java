@@ -2688,14 +2688,13 @@ public final class ProcessList extends ProcessListInternal
                         // If we're not told to skip the process group creation, go create it.
                         final int res = Process.createProcessGroup(uid, startResult.pid);
                         if (res < 0) {
+                            // No cgroup v2 apps hierarchy here: createProcessGroup can return
+                            // -ENOENT (not just -ESRCH); upstream AssertionError would kill
+                            // system_server, so tolerate it on this legacy kernel.
                             String errorStr = "Unable to create process group for "
                                 + app.processName + " (uid: " + uid + ", pid: " + startResult.pid
                                 + "), errno: " + res;
-                            if (res == -OsConstants.ESRCH) {
-                                Slog.e(ActivityManagerService.TAG, errorStr);
-                            } else {
-                                throw new AssertionError(errorStr);
-                            }
+                            Slog.e(ActivityManagerService.TAG, errorStr);
                         } else {
                             app.mProcessGroupCreated = true;
                         }
