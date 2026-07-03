@@ -87,9 +87,12 @@ public class ImsMultiEndpointImplBase {
         // Call the methods with a clean calling identity on the executor and wait indefinitely for
         // the future to return.
         private void executeMethodAsync(Runnable r, String errorLogName) {
+            // Legacy IMS impls never call setDefaultExecutor, leaving mExecutor null;
+            // runAsync(r, null) would NPE com.android.phone. Run synchronously when null.
+            Executor exec = (mExecutor != null) ? mExecutor : Runnable::run;
             try {
                 CompletableFuture.runAsync(
-                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), mExecutor).join();
+                        () -> TelephonyUtils.runWithCleanCallingIdentity(r), exec).join();
             } catch (CancellationException | CompletionException e) {
                 Log.w(TAG, "ImsMultiEndpointImplBase Binder - " + errorLogName + " exception: "
                         + e.getMessage());

@@ -111,7 +111,10 @@ public class NetdService {
      * @return an INetd instance.
      */
     public static INetd get() {
-        return get(-1);
+        // Bound the wait instead of blocking indefinitely (-1): on kernels
+        // lacking eBPF/CONNMARK netd may never register, and this runs on
+        // system_server's main thread at boot, so an infinite wait trips the Watchdog.
+        return get(30000L);
     }
 
     public static interface NetdCommand {
