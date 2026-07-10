@@ -59,6 +59,16 @@ class SliderHapticFeedbackProvider(
 
     private val lowTickDurationMs =
         vibratorHelper.getPrimitiveDurations(VibrationEffect.Composition.PRIMITIVE_LOW_TICK)[0]
+    // Bare on/off (ERM) vibrators can't render the LRA drag-texture primitives because they smear into
+    // laggy phantom buzzes so we play only one sustained vibration for the whole drag instead.
+    private val arePrimitivesSupported =
+        vibratorHelper.areAllPrimitivesSupported(
+            VibrationEffect.Composition.PRIMITIVE_LOW_TICK,
+            VibrationEffect.Composition.PRIMITIVE_TICK,
+            VibrationEffect.Composition.PRIMITIVE_CLICK,
+        )
+    private var isContinuousVibrating = false
+    private var isTouchInteraction = false
     private var hasVibratedAtLowerBookend = false
     private var hasVibratedAtUpperBookend = false
 
@@ -72,7 +82,9 @@ class SliderHapticFeedbackProvider(
      * @param[absoluteVelocity] Velocity of the handle when it reached the bookend.
      */
     private fun vibrateOnEdgeCollision(absoluteVelocity: Float) {
+        if (!arePrimitivesSupported) return
         val powerScale = scaleOnEdgeCollision(absoluteVelocity)
+        // (edge clicks stay disabled on ERM: the sustained drag vibration already covers feedback)
         if (Flags.msdlFeedback()) {
             val properties =
                 InteractionProperties.DynamicVibrationScale(
@@ -211,10 +223,33 @@ class SliderHapticFeedbackProvider(
         return scale.pow(config.exponent)
     }
 
-    override fun onHandleAcquiredByTouch() {}
+    override fun onHandleAcquiredByTouch() {
+        isTouchInteraction = true
+    }
 
     override fun onHandleReleasedFromTouch() {
         dragTextureLastProgress = -1f
+        isTouchInteraction = false
+        stopContinuousVibration()
+    }
+
+    // Starts the fallback vibration
+    private fun startContinuousVibration() {
+        if (isContinuousVibrating) return
+        isContinuousVibrating = true
+        vibratorHelper.vibrate(
+            VibrationEffect.createOneShot(
+                CONTINUOUS_VIBRATION_MAX_MS,
+                VibrationEffect.DEFAULT_AMPLITUDE,
+            ),
+            VIBRATION_ATTRIBUTES_TOUCH,
+        )
+    }
+
+    private fun stopContinuousVibration() {
+        if (!isContinuousVibrating) return
+        isContinuousVibrating = false
+        vibratorHelper.cancel()
     }
 
     override fun onLowerBookend() {
@@ -232,20 +267,31 @@ class SliderHapticFeedbackProvider(
     }
 
     override fun onProgress(@FloatRange(from = 0.0, to = 1.0) progress: Float) {
-        vibrateDragTexture(abs(velocityProvider.getTrackedVelocity()), progress)
+        if (arePrimitivesSupported) {
+            vibrateDragTexture(abs(velocityProvider.getTrackedVelocity()), progress)
+        } else if (isTouchInteraction) {
+            startContinuousVibration()
+        }
         hasVibratedAtUpperBookend = false
         hasVibratedAtLowerBookend = false
     }
 
-    override fun onProgressJump(@FloatRange(from = 0.0, to = 1.0) progress: Float) {}
+    override fun onProgressJump(@FloatRange(from = 0.0, to = 1.0) progress: Float) {
+        isTouchInteraction = true
+    }
 
-    override fun onSelectAndArrow(@FloatRange(from = 0.0, to = 1.0) progress: Float) {}
+    override fun onSelectAndArrow(@FloatRange(from = 0.0, to = 1.0) progress: Float) {
+        isTouchInteraction = false
+    }
 
     private companion object {
+        private const val CONTINUOUS_VIBRATION_MAX_MS = 10_000L
         private val VIBRATION_ATTRIBUTES_PIPELINING =
             VibrationAttributes.Builder()
                 .setUsage(VibrationAttributes.USAGE_TOUCH)
                 .setFlags(VibrationAttributes.FLAG_PIPELINED_EFFECT)
                 .build()
+        private val VIBRATION_ATTRIBUTES_TOUCH =
+            VibrationAttributes.Builder().setUsage(VibrationAttributes.USAGE_TOUCH).build()
     }
 }
