@@ -654,6 +654,46 @@ public class TelephonyManager {
     private static final String MULTI_SIM_VARIANT_DSDA = "dsda";
     private static final String MULTI_SIM_VARIANT_TSTS = "tsts";
 
+    /** Enum indicating multisim variants
+     *  DSDS - Dual SIM Dual Standby
+     *  DSDA - Dual SIM Dual Active
+     *  TSTS - Triple SIM Triple Standby
+     **/
+    /** @hide */
+    @UnsupportedAppUsage(implicitMember =
+            "values()[Landroid/telephony/TelephonyManager$MultiSimVariants;")
+    public enum MultiSimVariants {
+        @UnsupportedAppUsage
+        DSDS,
+        @UnsupportedAppUsage
+        DSDA,
+        @UnsupportedAppUsage
+        TSTS,
+        @UnsupportedAppUsage
+        UNKNOWN
+    };
+
+    /**
+     * Returns the multi SIM variant.
+     *
+     * <ul>
+     *   <li>Returns DSDS for Dual SIM Dual Standby.</li>
+     *   <li>Returns DSDA for Dual SIM Dual Active.</li>
+     *   <li>Returns TSTS for Triple SIM Triple Standby.</li>
+     *   <li>Returns UNKNOWN for others.</li>
+     * </ul>
+     * @hide
+     */
+    @UnsupportedAppUsage
+    public MultiSimVariants getMultiSimConfiguration() {
+        return switch(TelephonyProperties.multi_sim_config().orElse("").toLowerCase(Locale.ROOT)) {
+            case MULTI_SIM_VARIANT_DSDS -> MultiSimVariants.DSDS;
+            case MULTI_SIM_VARIANT_DSDA -> MultiSimVariants.DSDA;
+            case MULTI_SIM_VARIANT_TSTS -> MultiSimVariants.TSTS;
+            default -> MultiSimVariants.UNKNOWN;
+        };
+    }
+
     /**
      * Returns the number of logical modems currently configured to be activated.
      *
