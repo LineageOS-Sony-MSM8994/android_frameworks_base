@@ -2298,9 +2298,8 @@ public final class SystemServiceRegistry {
         if (sEnableServiceNotFoundWtf && ret == null) {
             // Some services do return null in certain situations, so don't do WTF for them.
             switch (name) {
-                // Queried before they're published early in boot; the WTF recurses via
-                // addErrorToDropBox -> getSystemService(dropbox) and stalls startOtherServices.
-                case Context.DROPBOX_SERVICE:
+                // Queried before they're published early in boot; the WTF stalls
+                // startOtherServices.
                 case Context.SUPERVISION_SERVICE:
                 case Context.CONTENT_CAPTURE_MANAGER_SERVICE:
                 case Context.APP_PREDICTION_SERVICE:
