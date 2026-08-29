@@ -81,10 +81,8 @@ public class KeyguardStatusBarView extends RelativeLayout {
     private boolean mKeyguardUserSwitcherEnabled;
     private boolean mKeyguardUserAvatarEnabled;
 
-    private boolean mIsPrivacyDotEnabled;
     private int mSystemIconsSwitcherHiddenExpandedMargin;
     private int mStatusBarPaddingEnd;
-    private int mMinDotWidth;
     private View mSystemIconsContainer;
     private View mSystemIcons;
     private final MutableStateFlow<DarkChange> mDarkChange = StateFlowKt.MutableStateFlow(
@@ -129,7 +127,6 @@ public class KeyguardStatusBarView extends RelativeLayout {
         mStatusIconArea = findViewById(R.id.status_icon_area);
         mStatusIconContainer = findViewById(R.id.statusIcons);
         mUserSwitcherContainer = findViewById(R.id.user_switcher_container);
-        mIsPrivacyDotEnabled = mContext.getResources().getBoolean(R.bool.config_enablePrivacyDot);
         loadDimens();
     }
 
@@ -211,8 +208,6 @@ public class KeyguardStatusBarView extends RelativeLayout {
                 R.dimen.system_icons_switcher_hidden_expanded_margin);
         mStatusBarPaddingEnd = res.getDimensionPixelSize(
                 R.dimen.status_bar_padding_end);
-        mMinDotWidth = res.getDimensionPixelSize(
-                R.dimen.ongoing_appops_dot_min_padding);
         mCutoutSideNudge = getResources().getDimensionPixelSize(
                 R.dimen.display_cutout_margin_consumption);
         mRoundedCornerPadding = res.getDimensionPixelSize(
@@ -289,7 +284,7 @@ public class KeyguardStatusBarView extends RelativeLayout {
         return super.onApplyWindowInsets(insets);
     }
 
-    private boolean updateLayoutConsideringCutout(StatusBarContentInsetsProvider insetsProvider) {
+    boolean updateLayoutConsideringCutout(StatusBarContentInsetsProvider insetsProvider) {
         return setDisplayCutout(
                 getRootWindowInsets().getDisplayCutout(),
                 insetsProvider);
@@ -312,16 +307,11 @@ public class KeyguardStatusBarView extends RelativeLayout {
     private void updatePadding(StatusBarContentInsetsProvider insetsProvider) {
         final int waterfallTop =
                 mDisplayCutout == null ? 0 : mDisplayCutout.getWaterfallInsets().top;
+        // The insets already reserve the privacy dot space, and only while it is showing.
         mPadding = insetsProvider.getStatusBarContentInsetsForCurrentRotation();
 
-        // consider privacy dot space
-        final int minLeft = (isLayoutRtl() && mIsPrivacyDotEnabled)
-                ? Math.max(mMinDotWidth, mPadding.left) : mPadding.left;
-        final int minRight = (!isLayoutRtl() && mIsPrivacyDotEnabled)
-                ? Math.max(mMinDotWidth, mPadding.right) : mPadding.right;
-
         int top = waterfallTop + mPadding.top;
-        setPadding(minLeft, top, minRight, 0);
+        setPadding(mPadding.left, top, mPadding.right, 0);
     }
 
     private boolean updateLayoutParamsNoCutout() {
