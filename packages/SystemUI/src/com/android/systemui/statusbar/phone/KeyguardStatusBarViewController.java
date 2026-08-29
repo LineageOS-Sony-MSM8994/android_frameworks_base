@@ -76,6 +76,7 @@ import com.android.systemui.statusbar.core.NewStatusBarIcons;
 import com.android.systemui.statusbar.disableflags.DisableStateTracker;
 import com.android.systemui.statusbar.events.SystemStatusAnimationCallback;
 import com.android.systemui.statusbar.events.SystemStatusAnimationScheduler;
+import com.android.systemui.statusbar.layout.StatusBarContentInsetsChangedListener;
 import com.android.systemui.statusbar.layout.StatusBarContentInsetsProvider;
 import com.android.systemui.statusbar.notification.AnimatableProperty;
 import com.android.systemui.statusbar.notification.stack.AnimationProperties;
@@ -163,6 +164,16 @@ public class KeyguardStatusBarViewController extends ViewController<KeyguardStat
     @Nullable private ComposeView mBatteryComposeView;
     private ViewGroup mSystemIconsContainer;
     private final StatusOverlayHoverListenerFactory mStatusOverlayHoverListenerFactory;
+
+    private final StatusBarContentInsetsChangedListener mInsetsChangedListener =
+            new StatusBarContentInsetsChangedListener() {
+                @Override
+                public void onStatusBarContentInsetsChanged() {
+                    if (mView.isAttachedToWindow()) {
+                        mView.updateLayoutConsideringCutout(insetsProvider());
+                    }
+                }
+            };
 
     private final ConfigurationController.ConfigurationListener mConfigurationListener =
             new ConfigurationController.ConfigurationListener() {
@@ -462,6 +473,10 @@ public class KeyguardStatusBarViewController extends ViewController<KeyguardStat
         }
         mView.init(mStatusBarUserChipViewModel);
         mConfigurationController.addCallback(mConfigurationListener);
+        StatusBarContentInsetsProvider provider = insetsProvider();
+        if (provider != null) {
+            provider.addCallback(mInsetsChangedListener);
+        }
         if (mAnimationScheduler == null) {
             mAnimationScheduler = getAnimationSchedulerForDisplay(mContext.getDisplayId());
         }
@@ -549,6 +564,10 @@ public class KeyguardStatusBarViewController extends ViewController<KeyguardStat
     protected void onViewDetached() {
         mSystemIconsContainer.setOnHoverListener(null);
         mConfigurationController.removeCallback(mConfigurationListener);
+        StatusBarContentInsetsProvider provider = insetsProvider();
+        if (provider != null) {
+            provider.removeCallback(mInsetsChangedListener);
+        }
         if (mAnimationScheduler != null) {
             mAnimationScheduler.removeCallback(mAnimationCallback);
         }

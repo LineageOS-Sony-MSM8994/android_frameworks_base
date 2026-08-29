@@ -258,6 +258,11 @@ constructor(
         }
     }
 
+    /** The dot has its own window, so hop to the main thread to move the status bar content. */
+    private fun setDotSpaceReserved(reserved: Boolean) {
+        mainExecutor.execute { contentInsetsProvider.setPrivacyDotVisible(reserved) }
+    }
+
     @UiThread
     override fun hideDotView(dot: View, animate: Boolean) {
         dot.clearAnimation()
@@ -268,17 +273,20 @@ constructor(
                 .alpha(0f)
                 .withEndAction {
                     dot.visibility = View.INVISIBLE
+                    setDotSpaceReserved(false)
                     showingListener?.onPrivacyDotHidden(dot)
                 }
                 .start()
         } else {
             dot.visibility = View.INVISIBLE
+            setDotSpaceReserved(false)
             showingListener?.onPrivacyDotHidden(dot)
         }
     }
 
     @UiThread
     override fun showDotView(dot: View, animate: Boolean) {
+        setDotSpaceReserved(true)
         dot.clearAnimation()
         if (animate) {
             dot.visibility = View.VISIBLE
@@ -336,6 +344,12 @@ constructor(
             displayHeight = size.y
         }
 
+        // The dot is laid out against the inner edge of its corner container, so widening the
+        // container is what moves the dot away from the screen edge.
+        val dotEdgeMargin =
+            tl.context.resources.getDimensionPixelSize(R.dimen.ongoing_appops_dot_edge_margin)
+        fun reserved(w: Int) = if (w > 0) w + dotEdgeMargin else 0
+
         var rot = activeRotationForCorner(tl, rtl)
         var contentInsets = state.contentRectForRotation(rot)
         tl.setPadding(0, state.paddingTop, 0, 0)
@@ -343,9 +357,9 @@ constructor(
             topMargin = contentInsets.top
             height = contentInsets.height()
             if (rtl) {
-                width = contentInsets.left
+                width = reserved(contentInsets.left)
             } else {
-                width = displayHeight - contentInsets.right
+                width = reserved(displayHeight - contentInsets.right)
             }
         }
 
@@ -356,9 +370,9 @@ constructor(
             topMargin = contentInsets.top
             height = contentInsets.height()
             if (rtl) {
-                width = contentInsets.left
+                width = reserved(contentInsets.left)
             } else {
-                width = displayWidth - contentInsets.right
+                width = reserved(displayWidth - contentInsets.right)
             }
         }
 
@@ -369,9 +383,9 @@ constructor(
             topMargin = contentInsets.top
             height = contentInsets.height()
             if (rtl) {
-                width = contentInsets.left
+                width = reserved(contentInsets.left)
             } else {
-                width = displayHeight - contentInsets.right
+                width = reserved(displayHeight - contentInsets.right)
             }
         }
 
@@ -382,9 +396,9 @@ constructor(
             topMargin = contentInsets.top
             height = contentInsets.height()
             if (rtl) {
-                width = contentInsets.left
+                width = reserved(contentInsets.left)
             } else {
-                width = displayWidth - contentInsets.right
+                width = reserved(displayWidth - contentInsets.right)
             }
         }
     }
@@ -409,6 +423,7 @@ constructor(
     @UiThread
     private fun updateDesignatedCorner(newCorner: View?, shouldShowDot: Boolean) {
         if (shouldShowDot) {
+            setDotSpaceReserved(true)
             showingListener?.onPrivacyDotShown(newCorner)
             newCorner?.apply {
                 clearAnimation()
