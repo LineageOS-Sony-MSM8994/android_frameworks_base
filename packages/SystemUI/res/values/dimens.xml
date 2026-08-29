@@ -1363,6 +1363,9 @@
     <!--  Total minimum padding to enforce to ensure that the dot can always show  -->
     <dimen name="ongoing_appops_dot_min_padding">20dp</dimen>
 
+    <!--  Gap kept between the dot and the edge of the screen  -->
+    <dimen name="ongoing_appops_dot_edge_margin">0dp</dimen>
+
     <dimen name="ongoing_appops_dialog_side_margins">@dimen/notification_shade_content_margin_horizontal</dimen>
 
     <dimen name="ongoing_appops_dialog_circle_size">32dp</dimen>

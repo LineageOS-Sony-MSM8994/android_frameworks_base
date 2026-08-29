@@ -388,7 +388,7 @@ public class PhoneStatusBarView extends FrameLayout {
         lp.height = bounds.height();
     }
 
-    private void updateSafeInsets() {
+    void updateSafeInsets() {
         if (mInsetsFetcher == null) {
             Log.e(TAG, "mInsetsFetcher unexpectedly null");
             return;
