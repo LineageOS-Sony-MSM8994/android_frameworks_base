@@ -92,6 +92,12 @@ interface StatusBarContentInsetsProvider :
     fun currentRotationHasCornerCutout(): Boolean
 
     /**
+     * Reserve the space the ongoing privacy dot needs at the end of the status bar, or give it
+     * back. The content only has to make room for the dot while the dot is actually showing.
+     */
+    fun setPrivacyDotVisible(visible: Boolean)
+
+    /**
      * Calculates the maximum bounding rectangle for the privacy chip animation + ongoing privacy
      * dot in the coordinates relative to the given rotation.
      *
@@ -156,6 +162,7 @@ constructor(
     // (e.g. network displays)
     private val insetsCache = LruCache<CacheKey, Rect>(MAX_CACHE_SIZE)
     private val listeners = CopyOnWriteArraySet<StatusBarContentInsetsChangedListener>()
+    private var privacyDotVisible = false
     private val isPrivacyDotEnabled: Boolean by
         lazy(LazyThreadSafetyMode.PUBLICATION) {
             context.resources.getBoolean(R.bool.config_enablePrivacyDot)
@@ -186,6 +193,12 @@ constructor(
         configurationController.removeCallback(this)
         dumpManager.unregisterDumpable(dumpableName)
         commandRegistry.unregisterCommand(commandName)
+    }
+
+    override fun setPrivacyDotVisible(visible: Boolean) {
+        if (privacyDotVisible == visible) return
+        privacyDotVisible = visible
+        clearCachedInsets()
     }
 
     override fun addCallback(listener: StatusBarContentInsetsChangedListener) {
@@ -327,7 +340,7 @@ constructor(
                 )
             }
         val minDotPadding =
-            if (isPrivacyDotEnabled)
+            if (isPrivacyDotEnabled && privacyDotVisible)
                 rotatedResources.getDimensionPixelSize(R.dimen.ongoing_appops_dot_min_padding)
             else 0
         val dotWidth =

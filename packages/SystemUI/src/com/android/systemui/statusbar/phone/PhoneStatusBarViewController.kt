@@ -42,6 +42,7 @@ import com.android.systemui.shade.domain.interactor.ShadeModeInteractor
 import com.android.systemui.statusbar.core.StatusBarEventForwardingModernization
 import com.android.systemui.statusbar.data.repository.StatusBarConfigurationController
 import com.android.systemui.statusbar.gesture.StatusBarLongPressGestureDetector
+import com.android.systemui.statusbar.layout.StatusBarContentInsetsChangedListener
 import com.android.systemui.statusbar.layout.StatusBarContentInsetsProvider
 import com.android.systemui.statusbar.policy.Clock
 import com.android.systemui.statusbar.policy.ConfigurationController
@@ -180,7 +181,15 @@ private constructor(
         updateStartSideContainerHoverListener()
     }
 
+    private val insetsChangedListener =
+        object : StatusBarContentInsetsChangedListener {
+            override fun onStatusBarContentInsetsChanged() {
+                mView.updateSafeInsets()
+            }
+        }
+
     override fun onViewAttached() {
+        statusBarContentInsetsProvider?.addCallback(insetsChangedListener)
         clock = mView.requireViewById(R.id.clock)
         clockCenter = mView.requireViewById(R.id.clock_center)
         clockRight = mView.requireViewById(R.id.clock_right)
@@ -257,6 +266,7 @@ private constructor(
 
     @VisibleForTesting
     public override fun onViewDetached() {
+        statusBarContentInsetsProvider?.removeCallback(insetsChangedListener)
         removeDarkReceivers()
         startSideContainer.setOnHoverListener(null)
         endSideContainer.setOnHoverListener(null)
