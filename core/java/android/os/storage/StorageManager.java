@@ -1470,6 +1470,81 @@ public class StorageManager {
         return paths;
     }
 
+    /**
+     * Storage volume type, as the Sony Xperia platform exposes it.
+     *
+     * @hide
+     */
+    @UnsupportedAppUsage(implicitMember =
+            "values()[Landroid/os/storage/StorageManager$StorageType;")
+    public enum StorageType {
+        @UnsupportedAppUsage
+        INTERNAL,
+        @UnsupportedAppUsage
+        EXTERNAL_CARD,
+        @UnsupportedAppUsage
+        EXTERNAL_USB,
+        @UnsupportedAppUsage
+        UNKNOWN
+    }
+
+    /**
+     * Returns the mount point of the first volume of the given type.
+     *
+     * @hide
+     */
+    @UnsupportedAppUsage
+    public @NonNull String getVolumePath(StorageType type) throws FileNotFoundException {
+        for (StorageVolume volume : getVolumeList()) {
+            if (type.equals(getVolumeType(volume))) {
+                return volume.getPath();
+            }
+        }
+        throw new FileNotFoundException("No such storage volume");
+    }
+
+    /**
+     * Returns the type of the volume mounted at the given mount point.
+     *
+     * @hide
+     */
+    @UnsupportedAppUsage
+    public @NonNull StorageType getVolumeType(String mountPoint) throws FileNotFoundException {
+        for (StorageVolume volume : getVolumeList()) {
+            if (volume.getPath().equals(mountPoint)) {
+                return getVolumeType(volume);
+            }
+        }
+        throw new FileNotFoundException("No such storage volume");
+    }
+
+    /**
+     * Returns the type of the given volume.
+     *
+     * @hide
+     */
+    @UnsupportedAppUsage
+    public @NonNull StorageType getVolumeType(StorageVolume volume) {
+        final VolumeInfo info = findVolumeById(volume.getId());
+        if (info != null) {
+            final String id = info.getId();
+            if (VolumeInfo.ID_PRIVATE_INTERNAL.equals(id)
+                    || VolumeInfo.ID_EMULATED_INTERNAL.equals(id)
+                    || info.getType() == VolumeInfo.TYPE_EMULATED) {
+                return StorageType.INTERNAL;
+            }
+            if (info.disk != null) {
+                if (info.disk.isSd()) {
+                    return StorageType.EXTERNAL_CARD;
+                }
+                if (info.disk.isUsb()) {
+                    return StorageType.EXTERNAL_USB;
+                }
+            }
+        }
+        return StorageType.UNKNOWN;
+    }
+
     /** @removed */
     public @NonNull StorageVolume getPrimaryVolume() {
         return getPrimaryVolume(getVolumeList());
