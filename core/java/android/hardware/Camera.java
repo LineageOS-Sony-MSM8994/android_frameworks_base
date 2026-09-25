@@ -569,7 +569,7 @@ public class Camera {
      */
     @UnsupportedAppUsage
     public static Camera openLegacy(int cameraId, int halVersion) {
-        if (halVersion < CAMERA_HAL_API_VERSION_3_0) {
+        if (halVersion != CAMERA_HAL_API_VERSION_1_0 && halVersion < CAMERA_HAL_API_VERSION_3_0) {
             throw new IllegalArgumentException("Unsupported HAL version " + halVersion);
         }
 
