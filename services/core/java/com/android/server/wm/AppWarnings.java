@@ -212,6 +212,10 @@ class AppWarnings {
      * @param r activity record for which the warning may be displayed
      */
     public void showDeprecatedTargetDialogIfNeeded(ActivityRecord r) {
+        // A preinstalled app cannot be updated or uninstalled, so the warning offers nothing.
+        if (r.info.applicationInfo.isSystemApp()) {
+            return;
+        }
         // The warning dialog can be disabled for debugging or testing purposes
         final boolean disableDeprecatedTargetSdkDialog = SystemProperties.getBoolean(
                 "debug.wm.disable_deprecated_target_sdk_dialog", false);
@@ -230,6 +234,10 @@ class AppWarnings {
      * @param r activity record for which the warning may be displayed
      */
     public void showDeprecatedAbiDialogIfNeeded(ActivityRecord r) {
+        // A preinstalled app cannot be updated or uninstalled, so the warning offers nothing.
+        if (r.info.applicationInfo.isSystemApp()) {
+            return;
+        }
         final boolean isUsingAbiOverride = (r.info.applicationInfo.privateFlagsExt
                 & ApplicationInfo.PRIVATE_FLAG_EXT_CPU_OVERRIDE) != 0;
         if (isUsingAbiOverride) {
