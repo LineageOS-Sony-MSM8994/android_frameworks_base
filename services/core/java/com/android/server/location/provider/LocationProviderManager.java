@@ -22,6 +22,7 @@ import static android.app.AppOpsManager.OP_MONITOR_LOCATION;
 import static android.app.compat.CompatChanges.isChangeEnabled;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.location.LocationManager.DELIVER_HISTORICAL_LOCATIONS;
+import static android.location.LocationManager.FUSED_PROVIDER;
 import static android.location.LocationManager.GPS_PROVIDER;
 import static android.location.LocationManager.KEY_FLUSH_COMPLETE;
 import static android.location.LocationManager.KEY_LOCATIONS;
@@ -88,6 +89,7 @@ import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.provider.DeviceConfig;
+import android.provider.Settings;
 import android.stats.location.LocationStatsEnums;
 import android.text.TextUtils;
 import android.util.ArraySet;
@@ -179,6 +181,8 @@ public class LocationProviderManager extends
     // minimum amount of request delay in order to respect the delay, below this value the request
     // will just be scheduled immediately
     private static final long MIN_REQUEST_DELAY_MS = 30 * 1000;
+
+    private static final Object sLocationProvidersAllowedLock = new Object();
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({STATE_STARTED, STATE_STOPPING, STATE_STOPPED})
@@ -2797,6 +2801,7 @@ public class LocationProviderManager extends
         }
 
         mEnabled.put(userId, enabled);
+        updateLocationProvidersAllowed(userId, enabled);
 
         // don't log unknown -> false transitions for brevity
         if (wasEnabled != null || enabled) {
@@ -2841,6 +2846,32 @@ public class LocationProviderManager extends
 
         // update active state of affected registrations
         updateRegistrations(registration -> registration.getIdentity().getUserId() == userId);
+    }
+
+    // Legacy apps still read LOCATION_PROVIDERS_ALLOWED, so keep it in sync like before S
+    private void updateLocationProvidersAllowed(int userId, boolean enabled) {
+        if (FUSED_PROVIDER.equals(mName) || PASSIVE_PROVIDER.equals(mName)) {
+            return;
+        }
+
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            synchronized (sLocationProvidersAllowedLock) {
+                String allowed = Settings.Secure.getStringForUser(mContext.getContentResolver(),
+                        Settings.Secure.LOCATION_PROVIDERS_ALLOWED, userId);
+                ArraySet<String> providers = new ArraySet<>();
+                if (!TextUtils.isEmpty(allowed)) {
+                    Collections.addAll(providers, allowed.split(","));
+                }
+                if (enabled ? providers.add(mName) : providers.remove(mName)) {
+                    Settings.Secure.putStringForUser(mContext.getContentResolver(),
+                            Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
+                            TextUtils.join(",", providers), userId);
+                }
+            }
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
     }
 
     @Nullable Location getPermittedLocation(@Nullable Location fineLocation,
