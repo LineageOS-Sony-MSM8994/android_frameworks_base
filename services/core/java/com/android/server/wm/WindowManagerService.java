@@ -9937,6 +9937,11 @@ public class WindowManagerService extends IWindowManager.Stub
 
         final ActivityRecord mostRecentActivityInAdjacent = getMostRecentActivityInAdjacent(
                 activity);
+        if (mostRecentActivityInAdjacent == activity) {
+            // Nothing to move. Refocusing the task would bring it back to front if it is
+            // already being moved to back, e.g. by a previous back press.
+            return false;
+        }
 
         moveFocusToActivity(mostRecentActivityInAdjacent);
         return !focusedWindow.isFocused();
