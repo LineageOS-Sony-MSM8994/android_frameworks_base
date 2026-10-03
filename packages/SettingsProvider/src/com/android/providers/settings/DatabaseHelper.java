@@ -2252,6 +2252,9 @@ class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.Secure.SLEEP_TIMEOUT,
                     R.integer.def_sleep_timeout);
 
+            loadBooleanSetting(stmt, Settings.Secure.MEDIA_CONTROLS_RESUME,
+                    R.bool.def_media_controls_resume);
+
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,
              * secure, and system settings are no longer stored in a database
