@@ -298,6 +298,6 @@ class MediaCarouselScrollHandlerTest : SysuiTestCase() {
         mediaCarouselScrollHandler.onSettingsButtonUpdated(settingsButton)
 
         mediaCarouselScrollHandler.visibleMediaIndex = visibleIndex
-        mediaCarouselScrollHandler.showsSettingsButton = showsSettingsButton
+        mediaCarouselScrollHandler.canDismissVisiblePlayer = { !showsSettingsButton }
     }
 }
