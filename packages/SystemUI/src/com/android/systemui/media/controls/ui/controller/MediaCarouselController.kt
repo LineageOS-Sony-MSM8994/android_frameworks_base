@@ -78,7 +78,6 @@ import com.android.systemui.statusbar.featurepods.media.domain.interactor.MediaC
 import com.android.systemui.statusbar.notification.collection.provider.OnReorderingAllowedListener
 import com.android.systemui.statusbar.notification.collection.provider.VisualStabilityProvider
 import com.android.systemui.statusbar.policy.ConfigurationController
-import com.android.systemui.util.Utils
 import com.android.systemui.util.animation.UniqueObjectHostView
 import com.android.systemui.util.animation.requiresRemeasuring
 import com.android.systemui.util.boundsOnScreen
@@ -199,8 +198,6 @@ constructor(
     private val mediaContent: ViewGroup
     @VisibleForTesting var pageIndicator: PageIndicator
     private var needsReordering: Boolean = false
-    private var isUserInitiatedRemovalQueued: Boolean = false
-    private var keysNeedRemoval = mutableSetOf<String>()
     private var isRtl: Boolean = false
         set(value) {
             if (value != field) {
@@ -343,6 +340,7 @@ constructor(
                 this::onVisibleCardChanged,
                 logger,
             )
+        mediaCarouselScrollHandler.canDismissVisiblePlayer = this::canDismissVisiblePlayer
         carouselLocale = context.resources.configuration.locales.get(0)
         isRtl = context.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
         inflateSettingsButton()
@@ -360,16 +358,6 @@ constructor(
                 reorderAllPlayers()
                 updatePageArrows()
             }
-
-            keysNeedRemoval.forEach {
-                removePlayer(it, userInitiated = isUserInitiatedRemovalQueued)
-            }
-            if (keysNeedRemoval.size > 0) {
-                // Carousel visibility may need to be updated after late removals
-                updateHostVisibility()
-            }
-            keysNeedRemoval.clear()
-            isUserInitiatedRemovalQueued = false
 
             // Update user visibility so that no extra impression will be logged when
             // activeMediaIndex resets to 0
@@ -396,20 +384,6 @@ constructor(
                         }
                     }
                     addOrUpdatePlayer(key, oldKey, data, onUiExecutionEnd)
-                    val canRemove = data.isPlaying?.let { !it } ?: data.isClearable && !data.active
-                    if (canRemove && !Utils.useMediaResumption(context)) {
-                        // This media control is both paused and timed out, and the resumption
-                        // setting is off - let's remove it
-                        if (isReorderingAllowed) {
-                            onMediaDataRemoved(key, userInitiated = MediaPlayerData.isSwipedAway)
-                        } else {
-                            isUserInitiatedRemovalQueued = MediaPlayerData.isSwipedAway
-                            keysNeedRemoval.add(key)
-                        }
-                    } else {
-                        keysNeedRemoval.remove(key)
-                    }
-                    MediaPlayerData.isSwipedAway = false
                 }
 
                 override fun onMediaDataRemoved(key: String, userInitiated: Boolean) {
@@ -982,7 +956,6 @@ constructor(
                         prevLocation,
                     )
                 }
-                mediaCarouselScrollHandler.showsSettingsButton = !it.showsOnlyActiveMedia
                 mediaCarouselScrollHandler.falsingProtectionNeeded = it.falsingProtectionNeeded
                 val nowVisible = it.visible
                 if (nowVisible != playersVisible) {
@@ -1091,12 +1064,22 @@ constructor(
         }
     }
 
+    private fun getVisiblePlayerSortKey() =
+        MediaPlayerData.visiblePlayerKeys()
+            .elementAtOrNull(mediaCarouselScrollHandler.visibleMediaIndex)
+
+    private fun canDismissVisiblePlayer(): Boolean {
+        val data = getVisiblePlayerSortKey()?.data ?: return false
+        return data.isClearable && data.isPlaying != true
+    }
+
     @VisibleForTesting
     fun onSwipeToDismiss() {
         MediaControlsInComposeFlag.assertInLegacyMode()
-        MediaPlayerData.isSwipedAway = true
+        val key = getVisiblePlayerSortKey()?.key ?: return
         logger.logSwipeDismiss()
-        mediaManager.onSwipeToDismiss()
+        removePlayer(key, dismissMediaData = true, userInitiated = true)
+        mediaCarouselScrollHandler.resetTranslation()
     }
 
     fun getCurrentVisibleMediaContentIntent(): PendingIntent? {
@@ -1108,7 +1091,6 @@ constructor(
 
     override fun dump(pw: PrintWriter, args: Array<out String>) {
         pw.apply {
-            println("keysNeedRemoval: $keysNeedRemoval")
             println("dataKeys: ${MediaPlayerData.dataKeys()}")
             println("orderedPlayerSortKeys: ${MediaPlayerData.playerKeys()}")
             println("visiblePlayerSortKeys: ${MediaPlayerData.visiblePlayerKeys()}")
@@ -1117,7 +1099,6 @@ constructor(
             println(
                 "state: ${desiredHostState?.expansion}, only active ${desiredHostState?.showsOnlyActiveMedia}, visible ${desiredHostState?.visible}"
             )
-            println("isSwipedAway: ${MediaPlayerData.isSwipedAway}")
             println("allowMediaPlayerOnLockScreen: $allowMediaPlayerOnLockScreen")
         }
     }
@@ -1148,9 +1129,6 @@ internal object MediaPlayerData {
 
     // A map that tracks order of visible media players before they get reordered.
     private val visibleMediaPlayers = LinkedHashMap<String, MediaSortKey>()
-
-    // Whether the user swiped away the carousel since its last update
-    internal var isSwipedAway: Boolean = false
 
     fun addMediaPlayer(
         key: String,
