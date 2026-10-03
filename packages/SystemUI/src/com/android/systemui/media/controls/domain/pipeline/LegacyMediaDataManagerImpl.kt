@@ -149,6 +149,8 @@ class LegacyMediaDataManagerImpl(
     private val internalListeners: MutableSet<MediaDataManager.Listener> = mutableSetOf()
     private val mediaEntries: MutableMap<String, MediaData> =
         Collections.synchronizedMap(LinkedHashMap())
+    // Packages the user dismissed stay hidden until they play again
+    private val userDismissedPackages = mutableSetOf<String>()
 
     @Inject
     constructor(
@@ -570,6 +572,9 @@ class LegacyMediaDataManagerImpl(
     /** Dismiss a media entry. Returns false if the key was not found. */
     override fun dismissMediaData(key: String, delay: Long, userInitiated: Boolean): Boolean {
         val existed = mediaEntries[key] != null
+        if (userInitiated) {
+            mediaEntries[key]?.let { userDismissedPackages.add(it.packageName) }
+        }
         backgroundExecutor.execute {
             mediaEntries[key]?.let { mediaData ->
                 if (mediaData.isLocalSession()) {
@@ -695,6 +700,13 @@ class LegacyMediaDataManagerImpl(
     fun onMediaDataLoaded(key: String, oldKey: String?, data: MediaData) =
         traceSection("MediaDataManager#onMediaDataLoaded") {
             Assert.isMainThread()
+            if (data.packageName in userDismissedPackages) {
+                if (data.isPlaying != true) {
+                    mediaEntries.remove(key)
+                    return@traceSection
+                }
+                userDismissedPackages.remove(data.packageName)
+            }
             if (mediaEntries.containsKey(key)) {
                 // Otherwise this was removed already
                 mediaEntries.put(key, data)
@@ -741,7 +753,7 @@ class LegacyMediaDataManagerImpl(
             if (DEBUG) Log.d(TAG, "Notification removed but using session actions $key")
             mediaEntries.put(key, removed)
             notifyMediaDataLoaded(key, key, removed)
-        } else if (removed.semanticActions == null) {
+        } else if (removed.semanticActions == null && useMediaResumption) {
             // The app was using notification actions, and notif wasn't removed yet: keep player
             if (DEBUG) Log.d(TAG, "Session destroyed but using notification actions $key")
             mediaEntries.put(key, removed)
