@@ -131,8 +131,12 @@ class MediaCarouselScrollHandler(
     /** Is scrolling disabled for the carousel */
     var scrollingDisabled: Boolean = false
 
+    /** Can the currently visible player be swiped away? */
+    var canDismissVisiblePlayer: () -> Boolean = { false }
+
     /** Does the dismiss currently show the setting cog? */
-    var showsSettingsButton: Boolean = false
+    val showsSettingsButton: Boolean
+        get() = !canDismissVisiblePlayer()
 
     /** A utility to detect gestures, used in the touch listener */
     private val gestureListener =
