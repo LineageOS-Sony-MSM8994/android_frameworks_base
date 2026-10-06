@@ -231,13 +231,7 @@ class SliderHapticFeedbackProvider(
     private fun startContinuousVibration() {
         if (isContinuousVibrating) return
         isContinuousVibrating = true
-        vibratorHelper.vibrate(
-            VibrationEffect.createOneShot(
-                CONTINUOUS_VIBRATION_MAX_MS,
-                VibrationEffect.DEFAULT_AMPLITUDE,
-            ),
-            VIBRATION_ATTRIBUTES_TOUCH,
-        )
+        vibratorHelper.vibrate(CONTINUOUS_VIBRATION_EFFECT, VIBRATION_ATTRIBUTES_TOUCH)
     }
 
     private fun stopContinuousVibration() {
@@ -280,6 +274,26 @@ class SliderHapticFeedbackProvider(
 
     private companion object {
         private const val CONTINUOUS_VIBRATION_MAX_MS = 10_000L
+        private const val CONTINUOUS_VIBRATION_ON_MS = 12L
+        private const val CONTINUOUS_VIBRATION_OFF_MS = 18L
+        // No amplitude control on ERM, so an on/off duty cycle softens the sustained vibration
+        private val CONTINUOUS_VIBRATION_EFFECT =
+            VibrationEffect.createWaveform(
+                LongArray(
+                    1 +
+                        2 *
+                            (CONTINUOUS_VIBRATION_MAX_MS /
+                                    (CONTINUOUS_VIBRATION_ON_MS + CONTINUOUS_VIBRATION_OFF_MS))
+                                .toInt()
+                ) { i ->
+                    when {
+                        i == 0 -> 0L
+                        i % 2 == 1 -> CONTINUOUS_VIBRATION_ON_MS
+                        else -> CONTINUOUS_VIBRATION_OFF_MS
+                    }
+                },
+                -1,
+            )
         private val VIBRATION_ATTRIBUTES_PIPELINING =
             VibrationAttributes.Builder()
                 .setUsage(VibrationAttributes.USAGE_TOUCH)
