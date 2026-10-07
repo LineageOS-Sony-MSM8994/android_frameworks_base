@@ -189,10 +189,22 @@ constructor(
     }
 
     override fun onSystemEventAnimationFinish(hasPersistentDot: Boolean): Animator {
+        // Reserve the dot space before solving the move out, otherwise the chip runs into the
+        // screen edge and only jumps in once the dot shows up
+        val oldChipBounds = Rect(chipBounds)
+        if (hasPersistentDot) {
+            contentInsetsProvider.setPrivacyDotVisible(true)
+        }
+        val reserveShift =
+            if (animationDirection == LEFT) {
+                oldChipBounds.right - chipRight
+            } else {
+                chipLeft - oldChipBounds.left
+            }
         initializeAnimRect()
         val finish =
             if (hasPersistentDot) {
-                createMoveOutAnimationForDot()
+                createMoveOutAnimationForDot(reserveShift)
             } else {
                 createMoveOutAnimationDefault()
             }
@@ -212,7 +224,7 @@ constructor(
         return finish
     }
 
-    private fun createMoveOutAnimationForDot(): Animator {
+    private fun createMoveOutAnimationForDot(reserveShift: Int): Animator {
         val width1 =
             ValueAnimator.ofInt(chipWidth, chipMinWidth).apply {
                 duration = 9.frames
@@ -252,21 +264,18 @@ constructor(
 
         // Move the chip view to overlap exactly with the privacy dot. The chip displays by default
         // exactly adjacent to the dot, so we can just move over by the diameter of the dot itself,
-        // minus the margin that pulls the dot in from the screen edge
+        // minus the margin that pulls the dot in from the screen edge. Start from where the chip
+        // was before the dot space got reserved so it doesn't jump.
+        fun directed(amt: Int) = if (animationDirection == LEFT) amt else -amt
+        updateAnimatedBoundsX(directed(reserveShift))
         val moveOut =
-            ValueAnimator.ofInt(0, dotSize - dotEdgeMargin).apply {
+            ValueAnimator.ofInt(reserveShift, dotSize - dotEdgeMargin).apply {
                 startDelay = 3.frames
                 duration = 11.frames
                 interpolator = STATUS_CHIP_MOVE_TO_DOT
                 addUpdateListener {
                     // If RTL, we can just invert the move
-                    val amt =
-                        if (animationDirection == LEFT) {
-                            animatedValue as Int
-                        } else {
-                            -(animatedValue as Int)
-                        }
-                    updateAnimatedBoundsX(amt)
+                    updateAnimatedBoundsX(directed(animatedValue as Int))
                 }
             }
 
