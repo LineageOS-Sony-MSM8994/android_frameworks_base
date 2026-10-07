@@ -101,6 +101,9 @@ constructor(
 
     private val dotSize =
         context.resources.getDimensionPixelSize(R.dimen.ongoing_appops_dot_diameter)
+
+    private val dotEdgeMargin =
+        context.resources.getDimensionPixelSize(R.dimen.ongoing_appops_dot_edge_margin)
     // Use during animation so that multiple animators can update the drawing rect
     private var animRect = Rect()
 
@@ -248,9 +251,10 @@ constructor(
             }
 
         // Move the chip view to overlap exactly with the privacy dot. The chip displays by default
-        // exactly adjacent to the dot, so we can just move over by the diameter of the dot itself
+        // exactly adjacent to the dot, so we can just move over by the diameter of the dot itself,
+        // minus the margin that pulls the dot in from the screen edge
         val moveOut =
-            ValueAnimator.ofInt(0, dotSize).apply {
+            ValueAnimator.ofInt(0, dotSize - dotEdgeMargin).apply {
                 startDelay = 3.frames
                 duration = 11.frames
                 interpolator = STATUS_CHIP_MOVE_TO_DOT
